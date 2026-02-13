@@ -100,14 +100,16 @@ spotinfo --type "t3.micro" --with-score --output json
 ]
 ```
 
+> The `live_price` field appears when the price was fetched from the EC2 `DescribeSpotPriceHistory` API (for newer instance types missing from the static pricing feed). When present and `true`, the price was obtained in real-time via the AWS API. The field is omitted for static prices.
+
 ### CSV Format
 Data-only format without visual indicators:
 ```bash
 spotinfo --type "t3.micro" --with-score --output csv
 ```
 ```
-Instance Info,vCPU,Memory GiB,Savings over On-Demand,Frequency of interruption,USD/Hour,Placement Score (Regional)
-t3.micro,2,1,68,<5%,0.0043,9
+Instance Info,vCPU,Memory GiB,Savings over On-Demand,Frequency of interruption,USD/Hour,Price Source,Placement Score (Regional)
+t3.micro,2,1,68,<5%,0.0043,static,9
 ```
 
 ### Text Format
@@ -116,7 +118,7 @@ Plain text for scripting:
 spotinfo --type "t3.micro" --with-score --output text
 ```
 ```
-type=t3.micro, vCPU=2, memory=1GiB, saving=68%, interruption='<5%', price=0.00, score=🟢 9
+type=t3.micro, vCPU=2, memory=1GiB, saving=68%, interruption='<5%', price=0.0043, score=9
 ```
 
 ### Number Format

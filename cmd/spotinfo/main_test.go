@@ -245,7 +245,8 @@ func TestExecMainCmd_OutputFormats(t *testing.T) {
 			})
 
 			// Build command line arguments
-			args := []string{"spotinfo"}
+			args := make([]string, 0, 9) //nolint:mnd
+			args = append(args, "spotinfo")
 			args = append(args, "--type", tt.instanceType)
 			args = append(args, "--os", "linux")
 			args = append(args, "--region", tt.region)
@@ -330,7 +331,8 @@ func TestExecMainCmd_SortingAndOrdering(t *testing.T) {
 			})
 
 			// Build command line arguments
-			args := []string{"spotinfo"}
+			args := make([]string, 0, 9) //nolint:mnd
+			args = append(args, "spotinfo")
 			args = append(args, "--type", "t2.*")
 			args = append(args, "--sort", tt.sortBy)
 			args = append(args, "--order", tt.order)
@@ -810,6 +812,86 @@ func TestPrintFunctions_EdgeCases(t *testing.T) {
 		assert.Contains(t, result, "type=t2.micro", "Should include instance type")
 		assert.Contains(t, result, "saving=75%", "Should include savings")
 	})
+}
+
+func TestLivePriceIndicator(t *testing.T) {
+	staticAdvice := spot.Advice{
+		Region:   "us-east-1",
+		Instance: "t2.micro",
+		Savings:  50,
+		Info:     spot.TypeInfo{Cores: 1, RAM: 1.0},
+		Range:    spot.Range{Label: "<5%", Min: 0, Max: 5},
+		Price:    0.0116,
+	}
+	liveAdvice := spot.Advice{
+		Region:    "us-east-1",
+		Instance:  "m8g.xlarge",
+		Savings:   70,
+		Info:      spot.TypeInfo{Cores: 4, RAM: 16.0},
+		Range:     spot.Range{Label: "5-10%", Min: 5, Max: 10},
+		Price:     0.1567,
+		LivePrice: true,
+	}
+
+	t.Run("text output marks live prices with asterisk", func(t *testing.T) {
+		var output bytes.Buffer
+		printAdvicesText([]spot.Advice{staticAdvice, liveAdvice}, false, &output)
+		result := output.String()
+		assert.Contains(t, result, "price=0.0116\n", "Static price should not have asterisk")
+		assert.Contains(t, result, "price=0.1567*\n", "Live price should have asterisk")
+	})
+
+	t.Run("table output marks live prices with asterisk", func(t *testing.T) {
+		var output bytes.Buffer
+		printAdvicesTable([]spot.Advice{staticAdvice, liveAdvice}, false, false, &output)
+		result := output.String()
+		assert.Contains(t, result, "0.0116 ", "Static price without asterisk in table")
+		assert.Contains(t, result, "0.1567*", "Live price with asterisk in table")
+	})
+
+	t.Run("CSV output includes price source column", func(t *testing.T) {
+		var output bytes.Buffer
+		printAdvicesTable([]spot.Advice{staticAdvice, liveAdvice}, true, false, &output)
+		result := output.String()
+		assert.Contains(t, result, "Price Source", "CSV should have Price Source header")
+		assert.Contains(t, result, "static", "Static price should have 'static' source")
+		assert.Contains(t, result, "live", "Live price should have 'live' source")
+	})
+
+	t.Run("JSON output includes live_price field", func(t *testing.T) {
+		var output bytes.Buffer
+		printAdvicesJSON([]spot.Advice{staticAdvice, liveAdvice}, &output)
+
+		var advices []spot.Advice
+		err := json.Unmarshal(output.Bytes(), &advices)
+		require.NoError(t, err)
+		require.Len(t, advices, 2)
+		assert.False(t, advices[0].LivePrice, "Static price live_price should be false")
+		assert.True(t, advices[1].LivePrice, "Live price live_price should be true")
+	})
+}
+
+func TestFormatPrice(t *testing.T) {
+	tests := []struct {
+		price    float64
+		live     bool
+		expected string
+	}{
+		{0.0116, false, "0.0116"},
+		{0.1567, true, "0.1567*"},
+		{0.0, false, "0.0000"},
+		{0.0, true, "0.0000*"},
+		{1.5, false, "1.5000"},
+	}
+
+	for _, tt := range tests {
+		assert.Equal(t, tt.expected, formatPrice(tt.price, tt.live))
+	}
+}
+
+func TestPriceSource(t *testing.T) {
+	assert.Equal(t, "static", priceSource(false))
+	assert.Equal(t, "live", priceSource(true))
 }
 
 func TestIsMCPMode(t *testing.T) {
