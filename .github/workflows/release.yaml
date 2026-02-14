@@ -55,3 +55,14 @@ jobs:
           .bin/*
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Trigger homebrew-tap update
+      run: |
+        VERSION="${{ steps.version.outputs.VERSION }}"
+        VERSION="${VERSION#v}"
+        gh api repos/alexei-led/homebrew-tap/dispatches \
+          -f event_type=update-formula \
+          -f 'client_payload[formula]=spotinfo' \
+          -f "client_payload[version]=${VERSION}" \
+          -f 'client_payload[repo]=alexei-led/spotinfo'
+      env:
+        GITHUB_TOKEN: ${{ secrets.TAP_UPDATE_TOKEN }}
