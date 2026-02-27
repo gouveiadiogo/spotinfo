@@ -97,3 +97,85 @@ The CLI supports multiple output formats: number, text, json, table, csv
 - Update embedded data with `make update-data update-price` when needed
 - Follow Go 1.24 best practices and modern testing patterns
 - NEVER add Claude as co-author to git commit message
+## Data Update Workflow
+
+The embedded data files are critical — they provide offline capability:
+- `internal/spot/data/spot-advisor-data.json` — Interruption rates, savings % (from AWS S3)
+- `internal/spot/data/spot.js` — Static spot pricing (from AWS S3, wrapped in JS callback)
+
+**Update flow:**
+1. `make update-data` — fetches fresh `spot-advisor-data.json`
+2. `make update-price` — fetches fresh `spot.js`
+3. `go test ./...` — verify embedded data parses correctly
+4. Commit both files with the binary update
+
+**When to update:** Before each release, and when new instance families appear showing $0 price.
+
+## Provider Interfaces (Key Pattern)
+
+All data sources use interfaces for testability. Never call AWS directly in tests.
+
+```go
+// advisorProvider — embedded/remote advisor data
+type advisorProvider interface {
+    getRegions() []string
+    getRegionAdvice(region, os string) (map[string]spotAdvice, error)
+    getInstanceType(instance string) (TypeInfo, error)
+    getRange(index int) (Range, error)
+}
+
+// pricingProvider — static pricing data
+type pricingProvider interface {
+    getSpotPrice(instance, region, os string) (float64, error)
+}
+
+// livePriceProvider — EC2 API fallback for zero-price instances
+type livePriceProvider interface {
+    fetchLivePrices(ctx context.Context, region string, instanceTypes []string, os string) (map[string]float64, error)
+}
+
+// scoreProvider — EC2 placement scores
+type scoreProvider interface {
+    enrichWithScores(ctx context.Context, advices []Advice, singleAZ bool, timeout time.Duration) error
+}
+```
+
+In tests: use `mocks_test.go` which implements all interfaces with controllable behavior.
+In production: use `NewWithOptions()` which wires up real AWS providers.
+For injection: use `NewWithProviders(advisor, pricing)` + `SetLivePriceProvider()`.
+
+## Functional Options Pattern
+
+`GetSpotSavings` uses functional options — add new filters without breaking existing callers:
+
+```go
+// Adding a new filter option:
+func WithFoo(foo string) GetSpotSavingsOption {
+    return func(cfg *getSpotSavingsConfig) {
+        cfg.foo = foo
+    }
+}
+// Add `foo string` field to getSpotSavingsConfig
+// Apply in GetSpotSavings() after the options loop
+```
+
+## Testing Approach
+
+- **Unit tests** use mock providers from `mocks_test.go` — no AWS credentials needed
+- **Integration tests** require real AWS credentials — skip with `-short` flag
+- **Pattern**: `if testing.Short() { t.Skip("requires AWS credentials") }`
+- **Parallel**: all unit tests use `t.Parallel()` — keep it that way
+- **Table-driven**: use `tc := tc` (loop variable capture) or Go 1.22+ range semantics
+
+When adding a new feature:
+1. Add mock support in `mocks_test.go` if new interface method needed
+2. Write unit test with mock provider
+3. Optionally add integration test guarded by `testing.Short()`
+
+## Common Mistakes to Avoid
+
+- **Never** call `enrichMissingPrices` with a nil provider — it's a no-op but check the guard
+- **Never** forget `Advice.LivePrice = true` when price comes from EC2 API (not static feed)
+- **Never** bypass the `maxPrice` re-filter after live price enrichment
+- `allRegionsKeyword = "all"` is the special value for `--region all`, not an actual region
+- `defaultScoreTimeout` and `livePriceTimeout` are separate — don't confuse them

@@ -1,0 +1,51 @@
+# spotinfo
+
+> CLI tool and MCP server for AWS EC2 Spot Instance pricing, savings, and interruption frequency data.
+
+`spotinfo` provides comprehensive access to AWS Spot Instance data — real-time pricing, savings percentages, interruption rates, and placement scores. It embeds AWS data feeds for offline capability and supports multiple output formats (table, JSON, CSV, text). Also works as an MCP server for AI assistant integration.
+
+## Docs
+
+- [README](README.md)
+- [Usage Guide](docs/usage.md)
+- [MCP Server Integration](docs/mcp-server.md)
+- [Data Sources](docs/data-sources.md)
+- [CLAUDE.md](CLAUDE.md) - AI coding guidelines for this project
+
+## Key Features
+
+- **Spot pricing**: current spot prices per instance type, region, and OS
+- **Interruption rates**: AWS Spot Advisor interruption frequency ranges (0-5%, 5-10%, etc.)
+- **Savings**: percentage savings vs on-demand pricing
+- **Placement scores**: real-time AWS EC2 placement scores (1-10) for launch success probability
+- **Live price fallback**: EC2 DescribeSpotPriceHistory API for newer instances missing from static feed
+- **Embedded data**: works offline using embedded AWS data files
+- **MCP server**: expose spot data to Claude, Cursor, and other MCP-compatible AI tools
+- **Flexible filtering**: by region, instance type (regex), vCPU, memory, price, placement score
+- **Multi-region**: compare across regions with `--region all`
+- **Output formats**: table, JSON, CSV, plain text
+
+## Architecture
+
+- `cmd/spotinfo/` — CLI entry point and flag definitions
+- `internal/spot/` — core business logic
+  - `client.go` — `Client` struct with functional options pattern
+  - `data.go` — embedded data fetching and parsing
+  - `liveprice.go` — `livePriceProvider` interface, EC2 API live price enrichment
+  - `score.go` — placement score fetching and caching
+  - `types.go` — shared types (`Advice`, `TypeInfo`, `Range`, etc.)
+- `internal/mcp/` — MCP server tools
+
+## Data Sources
+
+- Spot Advisor data: `https://spot-price.s3.amazonaws.com/spot-advisor-data.json`
+- Static pricing: `https://spot-price.s3.amazonaws.com/spot.js`
+- Live prices: EC2 `DescribeSpotPriceHistory` API (fallback for zero-price instances)
+
+## Install
+
+```bash
+brew install alexei-led/tap/spotinfo
+```
+
+Or download from [GitHub Releases](https://github.com/alexei-led/spotinfo/releases).
