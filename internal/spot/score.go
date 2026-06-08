@@ -26,7 +26,7 @@ const (
 	rateLimitInterval = 100 * time.Millisecond
 
 	// AWS API configuration
-	defaultTargetCapacity      = 1
+	defaultTargetCapacity      = 30
 	defaultMaxResults          = 30
 	maxRetryAttempts           = 5
 	DefaultScoreTimeoutSeconds = 30
