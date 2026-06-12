@@ -26,7 +26,7 @@ const (
 	rateLimitInterval = 100 * time.Millisecond
 
 	// AWS API configuration
-	defaultTargetCapacity      = 30
+	DefaultTargetCapacity      = 1
 	defaultMaxResults          = 30
 	maxRetryAttempts           = 5
 	DefaultScoreTimeoutSeconds = 30
@@ -39,7 +39,7 @@ const (
 
 // awsAPIProvider provides spot placement scores with different implementations.
 type awsAPIProvider interface {
-	fetchScores(ctx context.Context, region string, instanceTypes []string, singleAZ bool) (map[string]int, error)
+	fetchScores(ctx context.Context, region string, instanceTypes []string, singleAZ bool, targetCapacity int) (map[string]int, error)
 }
 
 // awsScoreProvider implements awsAPIProvider using real AWS API calls.
@@ -138,7 +138,7 @@ func newAWSScoreProvider(ctx context.Context) (*awsScoreProvider, error) {
 }
 
 // fetchScores implements awsAPIProvider for AWS API calls.
-func (p *awsScoreProvider) fetchScores(ctx context.Context, region string, instanceTypes []string, singleAZ bool) (map[string]int, error) {
+func (p *awsScoreProvider) fetchScores(ctx context.Context, region string, instanceTypes []string, singleAZ bool, targetCapacity int) (map[string]int, error) {
 	// Create region-specific client
 	client := ec2.NewFromConfig(p.cfg, func(o *ec2.Options) {
 		o.Region = region
@@ -146,7 +146,7 @@ func (p *awsScoreProvider) fetchScores(ctx context.Context, region string, insta
 
 	input := &ec2.GetSpotPlacementScoresInput{
 		InstanceTypes:          instanceTypes,
-		TargetCapacity:         aws.Int32(defaultTargetCapacity),
+		TargetCapacity:         aws.Int32(int32(targetCapacity)),
 		SingleAvailabilityZone: aws.Bool(singleAZ),
 		MaxResults:             aws.Int32(defaultMaxResults),
 	}
@@ -188,7 +188,7 @@ func (p *awsScoreProvider) fetchScores(ctx context.Context, region string, insta
 }
 
 // fetchScores implements scoreProvider for mock scores.
-func (p *mockScoreProvider) fetchScores(ctx context.Context, region string, instanceTypes []string, singleAZ bool) (map[string]int, error) {
+func (p *mockScoreProvider) fetchScores(_ context.Context, _ string, instanceTypes []string, _ bool, _ int) (map[string]int, error) {
 	scores := make(map[string]int)
 	for i, instanceType := range instanceTypes {
 		// Generate deterministic mock scores based on instance type and position
@@ -198,8 +198,8 @@ func (p *mockScoreProvider) fetchScores(ctx context.Context, region string, inst
 	return scores, nil
 }
 
-// getCacheKey creates a consistent cache key for region and instance types.
-func (sc *scoreCache) getCacheKey(region string, instanceTypes []string, singleAZ bool) string {
+// getCacheKey creates a consistent cache key for region, instance types and target capacity.
+func (sc *scoreCache) getCacheKey(region string, instanceTypes []string, singleAZ bool, targetCapacity int) string {
 	sorted := make([]string, len(instanceTypes))
 	copy(sorted, instanceTypes)
 	sort.Strings(sorted)
@@ -209,14 +209,14 @@ func (sc *scoreCache) getCacheKey(region string, instanceTypes []string, singleA
 		azFlag = "az"
 	}
 
-	return fmt.Sprintf("%s:%s:%s", region, azFlag, strings.Join(sorted, ","))
+	return fmt.Sprintf("%s:%s:%s:%d", region, azFlag, strings.Join(sorted, ","), targetCapacity)
 }
 
 // getSpotPlacementScores fetches spot placement scores with caching and rate limiting.
 func (sc *scoreCache) getSpotPlacementScores(ctx context.Context, region string,
-	instanceTypes []string, singleAZ bool) (map[string]int, error) {
+	instanceTypes []string, singleAZ bool, targetCapacity int) (map[string]int, error) {
 
-	cacheKey := sc.getCacheKey(region, instanceTypes, singleAZ)
+	cacheKey := sc.getCacheKey(region, instanceTypes, singleAZ, targetCapacity)
 
 	// Check cache first
 	if cached, err := sc.cache.Get(cacheKey); err == nil {
@@ -231,7 +231,7 @@ func (sc *scoreCache) getSpotPlacementScores(ctx context.Context, region string,
 	}
 
 	// Fetch from provider (AWS or mock)
-	scores, err := sc.provider.fetchScores(ctx, region, instanceTypes, singleAZ)
+	scores, err := sc.provider.fetchScores(ctx, region, instanceTypes, singleAZ, targetCapacity)
 	if err != nil {
 		return nil, err
 	}
@@ -248,7 +248,7 @@ func (sc *scoreCache) getSpotPlacementScores(ctx context.Context, region string,
 
 // enrichWithScores enriches advice slice with spot placement scores.
 func (sc *scoreCache) enrichWithScores(ctx context.Context, advices []Advice,
-	singleAZ bool, timeout time.Duration) error {
+	singleAZ bool, targetCapacity int, timeout time.Duration) error {
 
 	enrichCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -293,7 +293,7 @@ func (sc *scoreCache) enrichWithScores(ctx context.Context, advices []Advice,
 			}
 
 			// Fetch scores for this region
-			scores, err := sc.getSpotPlacementScores(enrichCtx, r, instanceTypes, singleAZ)
+			scores, err := sc.getSpotPlacementScores(enrichCtx, r, instanceTypes, singleAZ, targetCapacity)
 			fetchTime := time.Now() // Capture fetch time for all advices in this region
 
 			mu.Lock()

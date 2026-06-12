@@ -399,16 +399,16 @@ func (_m *mockscoreProvider) EXPECT() *mockscoreProvider_Expecter {
 }
 
 // enrichWithScores provides a mock function for the type mockscoreProvider
-func (_mock *mockscoreProvider) enrichWithScores(ctx context.Context, advices []Advice, singleAZ bool, timeout time.Duration) error {
-	ret := _mock.Called(ctx, advices, singleAZ, timeout)
+func (_mock *mockscoreProvider) enrichWithScores(ctx context.Context, advices []Advice, singleAZ bool, targetCapacity int, timeout time.Duration) error {
+	ret := _mock.Called(ctx, advices, singleAZ, targetCapacity, timeout)
 
 	if len(ret) == 0 {
 		panic("no return value specified for enrichWithScores")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, []Advice, bool, time.Duration) error); ok {
-		r0 = returnFunc(ctx, advices, singleAZ, timeout)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, []Advice, bool, int, time.Duration) error); ok {
+		r0 = returnFunc(ctx, advices, singleAZ, targetCapacity, timeout)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -424,12 +424,13 @@ type mockscoreProvider_enrichWithScores_Call struct {
 //   - ctx context.Context
 //   - advices []Advice
 //   - singleAZ bool
+//   - targetCapacity int
 //   - timeout time.Duration
-func (_e *mockscoreProvider_Expecter) enrichWithScores(ctx interface{}, advices interface{}, singleAZ interface{}, timeout interface{}) *mockscoreProvider_enrichWithScores_Call {
-	return &mockscoreProvider_enrichWithScores_Call{Call: _e.mock.On("enrichWithScores", ctx, advices, singleAZ, timeout)}
+func (_e *mockscoreProvider_Expecter) enrichWithScores(ctx interface{}, advices interface{}, singleAZ interface{}, targetCapacity interface{}, timeout interface{}) *mockscoreProvider_enrichWithScores_Call {
+	return &mockscoreProvider_enrichWithScores_Call{Call: _e.mock.On("enrichWithScores", ctx, advices, singleAZ, targetCapacity, timeout)}
 }
 
-func (_c *mockscoreProvider_enrichWithScores_Call) Run(run func(ctx context.Context, advices []Advice, singleAZ bool, timeout time.Duration)) *mockscoreProvider_enrichWithScores_Call {
+func (_c *mockscoreProvider_enrichWithScores_Call) Run(run func(ctx context.Context, advices []Advice, singleAZ bool, targetCapacity int, timeout time.Duration)) *mockscoreProvider_enrichWithScores_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -443,15 +444,20 @@ func (_c *mockscoreProvider_enrichWithScores_Call) Run(run func(ctx context.Cont
 		if args[2] != nil {
 			arg2 = args[2].(bool)
 		}
-		var arg3 time.Duration
+		var arg3 int
 		if args[3] != nil {
-			arg3 = args[3].(time.Duration)
+			arg3 = args[3].(int)
+		}
+		var arg4 time.Duration
+		if args[4] != nil {
+			arg4 = args[4].(time.Duration)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
+			arg4,
 		)
 	})
 	return _c
@@ -462,7 +468,7 @@ func (_c *mockscoreProvider_enrichWithScores_Call) Return(err error) *mockscoreP
 	return _c
 }
 
-func (_c *mockscoreProvider_enrichWithScores_Call) RunAndReturn(run func(ctx context.Context, advices []Advice, singleAZ bool, timeout time.Duration) error) *mockscoreProvider_enrichWithScores_Call {
+func (_c *mockscoreProvider_enrichWithScores_Call) RunAndReturn(run func(ctx context.Context, advices []Advice, singleAZ bool, targetCapacity int, timeout time.Duration) error) *mockscoreProvider_enrichWithScores_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -568,8 +574,8 @@ func (_m *mockawsAPIProvider) EXPECT() *mockawsAPIProvider_Expecter {
 }
 
 // fetchScores provides a mock function for the type mockawsAPIProvider
-func (_mock *mockawsAPIProvider) fetchScores(ctx context.Context, region string, instanceTypes []string, singleAZ bool) (map[string]int, error) {
-	ret := _mock.Called(ctx, region, instanceTypes, singleAZ)
+func (_mock *mockawsAPIProvider) fetchScores(ctx context.Context, region string, instanceTypes []string, singleAZ bool, targetCapacity int) (map[string]int, error) {
+	ret := _mock.Called(ctx, region, instanceTypes, singleAZ, targetCapacity)
 
 	if len(ret) == 0 {
 		panic("no return value specified for fetchScores")
@@ -577,18 +583,18 @@ func (_mock *mockawsAPIProvider) fetchScores(ctx context.Context, region string,
 
 	var r0 map[string]int
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string, bool) (map[string]int, error)); ok {
-		return returnFunc(ctx, region, instanceTypes, singleAZ)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string, bool, int) (map[string]int, error)); ok {
+		return returnFunc(ctx, region, instanceTypes, singleAZ, targetCapacity)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string, bool) map[string]int); ok {
-		r0 = returnFunc(ctx, region, instanceTypes, singleAZ)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string, bool, int) map[string]int); ok {
+		r0 = returnFunc(ctx, region, instanceTypes, singleAZ, targetCapacity)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(map[string]int)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, []string, bool) error); ok {
-		r1 = returnFunc(ctx, region, instanceTypes, singleAZ)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, []string, bool, int) error); ok {
+		r1 = returnFunc(ctx, region, instanceTypes, singleAZ, targetCapacity)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -605,11 +611,12 @@ type mockawsAPIProvider_fetchScores_Call struct {
 //   - region string
 //   - instanceTypes []string
 //   - singleAZ bool
-func (_e *mockawsAPIProvider_Expecter) fetchScores(ctx interface{}, region interface{}, instanceTypes interface{}, singleAZ interface{}) *mockawsAPIProvider_fetchScores_Call {
-	return &mockawsAPIProvider_fetchScores_Call{Call: _e.mock.On("fetchScores", ctx, region, instanceTypes, singleAZ)}
+//   - targetCapacity int
+func (_e *mockawsAPIProvider_Expecter) fetchScores(ctx interface{}, region interface{}, instanceTypes interface{}, singleAZ interface{}, targetCapacity interface{}) *mockawsAPIProvider_fetchScores_Call {
+	return &mockawsAPIProvider_fetchScores_Call{Call: _e.mock.On("fetchScores", ctx, region, instanceTypes, singleAZ, targetCapacity)}
 }
 
-func (_c *mockawsAPIProvider_fetchScores_Call) Run(run func(ctx context.Context, region string, instanceTypes []string, singleAZ bool)) *mockawsAPIProvider_fetchScores_Call {
+func (_c *mockawsAPIProvider_fetchScores_Call) Run(run func(ctx context.Context, region string, instanceTypes []string, singleAZ bool, targetCapacity int)) *mockawsAPIProvider_fetchScores_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -627,11 +634,16 @@ func (_c *mockawsAPIProvider_fetchScores_Call) Run(run func(ctx context.Context,
 		if args[3] != nil {
 			arg3 = args[3].(bool)
 		}
+		var arg4 int
+		if args[4] != nil {
+			arg4 = args[4].(int)
+		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
+			arg4,
 		)
 	})
 	return _c
@@ -642,7 +654,7 @@ func (_c *mockawsAPIProvider_fetchScores_Call) Return(stringToInt map[string]int
 	return _c
 }
 
-func (_c *mockawsAPIProvider_fetchScores_Call) RunAndReturn(run func(ctx context.Context, region string, instanceTypes []string, singleAZ bool) (map[string]int, error)) *mockawsAPIProvider_fetchScores_Call {
+func (_c *mockawsAPIProvider_fetchScores_Call) RunAndReturn(run func(ctx context.Context, region string, instanceTypes []string, singleAZ bool, targetCapacity int) (map[string]int, error)) *mockawsAPIProvider_fetchScores_Call {
 	_c.Call.Return(run)
 	return _c
 }
