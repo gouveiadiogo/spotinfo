@@ -28,10 +28,12 @@ type getSpotSavingsConfig struct {
 	cpu                    int
 	memory                 int
 	minScore               int
+	targetCapacity         int
 	sortBy                 SortBy
 	sortDesc               bool
 	withScores             bool
 	singleAvailabilityZone bool
+	livePrices             bool
 }
 
 // GetSpotSavingsOption is a functional option for GetSpotSavingsWithOptions.
@@ -115,6 +117,21 @@ func WithScoreTimeout(timeout time.Duration) GetSpotSavingsOption {
 	}
 }
 
+// WithLivePrices forces all prices to be fetched from the live EC2 DescribeSpotPriceHistory
+// API instead of the static feed, which may contain stale prices.
+func WithLivePrices(enable bool) GetSpotSavingsOption {
+	return func(cfg *getSpotSavingsConfig) {
+		cfg.livePrices = enable
+	}
+}
+
+// WithTargetCapacity sets the target capacity for spot placement score computation.
+func WithTargetCapacity(targetCapacity int) GetSpotSavingsOption {
+	return func(cfg *getSpotSavingsConfig) {
+		cfg.targetCapacity = targetCapacity
+	}
+}
+
 // Client provides access to AWS EC2 Spot instance pricing and advice.
 type Client struct {
 	advisorProvider   advisorProvider
@@ -140,7 +157,7 @@ type pricingProvider interface {
 
 // scoreProvider provides access to spot placement scores (private interface close to consumer).
 type scoreProvider interface {
-	enrichWithScores(ctx context.Context, advices []Advice, singleAZ bool, timeout time.Duration) error
+	enrichWithScores(ctx context.Context, advices []Advice, singleAZ bool, targetCapacity int, timeout time.Duration) error
 }
 
 // New creates a new spot client with default options.
@@ -183,9 +200,10 @@ func (c *Client) SetLivePriceProvider(p livePriceProvider) {
 func (c *Client) GetSpotSavings(ctx context.Context, opts ...GetSpotSavingsOption) ([]Advice, error) {
 	// Default configuration
 	cfg := &getSpotSavingsConfig{
-		instanceOS:   "linux",
-		sortBy:       SortByRange,
-		scoreTimeout: defaultScoreTimeout,
+		instanceOS:     "linux",
+		sortBy:         SortByRange,
+		scoreTimeout:   defaultScoreTimeout,
+		targetCapacity: DefaultTargetCapacity,
 	}
 
 	// Apply options
@@ -258,7 +276,7 @@ func (c *Client) GetSpotSavings(ctx context.Context, opts ...GetSpotSavingsOptio
 	}
 
 	// Enrich instances with missing prices from live AWS API
-	enrichMissingPrices(ctx, result, c.livePriceProvider, cfg.instanceOS, livePriceTimeout)
+	enrichMissingPrices(ctx, result, c.livePriceProvider, cfg.instanceOS, livePriceTimeout, cfg.livePrices)
 
 	// Re-apply maxPrice filter after live price enrichment
 	if cfg.maxPrice != 0 {
@@ -276,7 +294,7 @@ func (c *Client) GetSpotSavings(ctx context.Context, opts ...GetSpotSavingsOptio
 
 	// Add score enrichment if requested
 	if cfg.withScores {
-		err := c.enrichWithScores(ctx, result, cfg.singleAvailabilityZone, cfg.scoreTimeout)
+		err := c.enrichWithScores(ctx, result, cfg.singleAvailabilityZone, cfg.targetCapacity, cfg.scoreTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("score enrichment failed: %w", err)
 		}
@@ -411,9 +429,9 @@ func (p *defaultPricingProvider) getSpotPrice(instance, region, os string) (floa
 }
 
 // enrichWithScores delegates score enrichment to the scoreProvider.
-func (c *Client) enrichWithScores(ctx context.Context, advices []Advice, singleAZ bool, timeout time.Duration) error {
+func (c *Client) enrichWithScores(ctx context.Context, advices []Advice, singleAZ bool, targetCapacity int, timeout time.Duration) error {
 	if c.scoreProvider == nil {
 		c.scoreProvider = newScoreCache()
 	}
-	return c.scoreProvider.enrichWithScores(ctx, advices, singleAZ, timeout)
+	return c.scoreProvider.enrichWithScores(ctx, advices, singleAZ, targetCapacity, timeout)
 }

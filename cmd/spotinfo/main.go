@@ -181,6 +181,8 @@ func execMainCmd(ctx *cli.Context, execCtx context.Context, client spotClient, o
 	minScore := ctx.Int("min-score")
 	azLevel := ctx.Bool("az")
 	scoreTimeout := ctx.Int("score-timeout")
+	targetCapacity := ctx.Int("target-capacity")
+	livePrices := ctx.Bool("live-prices")
 
 	var sortByType spot.SortBy
 
@@ -223,9 +225,15 @@ func execMainCmd(ctx *cli.Context, execCtx context.Context, client spotClient, o
 		if scoreTimeout > 0 {
 			opts = append(opts, spot.WithScoreTimeout(time.Duration(scoreTimeout)*time.Second))
 		}
+		if targetCapacity > 0 {
+			opts = append(opts, spot.WithTargetCapacity(targetCapacity))
+		}
 	}
 	if minScore > 0 {
 		opts = append(opts, spot.WithMinScore(minScore))
+	}
+	if livePrices {
+		opts = append(opts, spot.WithLivePrices(true))
 	}
 
 	// get spot savings
@@ -676,6 +684,15 @@ func main() {
 				Name:  "score-timeout",
 				Usage: "timeout for score enrichment in seconds",
 				Value: spot.DefaultScoreTimeoutSeconds,
+			},
+			&cli.IntFlag{
+				Name:  "target-capacity",
+				Usage: "target capacity for spot placement score computation (use with --with-score)",
+				Value: spot.DefaultTargetCapacity,
+			},
+			&cli.BoolFlag{
+				Name:  "live-prices",
+				Usage: "fetch all spot prices live from the EC2 API instead of the static feed (requires AWS credentials)",
 			},
 		},
 		Name:    "spotinfo",

@@ -123,18 +123,21 @@ func osToProductDescription(os string) string {
 	return "Linux/UNIX"
 }
 
-// enrichMissingPrices fills in zero-priced Advice entries using the live price API.
-// It groups missing-price instances by region, fetches live prices in parallel, and
-// updates the Advice slice in place. Errors are logged but do not fail the operation.
-func enrichMissingPrices(ctx context.Context, advices []Advice, provider livePriceProvider, os string, timeout time.Duration) {
+// enrichMissingPrices fills in Advice entries using the live price API.
+// When forceAll is true, all instances are refreshed from the live API regardless of their
+// current price — use this when the static feed prices are stale or inaccurate.
+// Otherwise only zero-priced entries are enriched.
+// It groups instances by region, fetches live prices in parallel, and updates the Advice
+// slice in place. Errors are logged but do not fail the operation.
+func enrichMissingPrices(ctx context.Context, advices []Advice, provider livePriceProvider, os string, timeout time.Duration, forceAll bool) {
 	if provider == nil {
 		return
 	}
 
-	// Group advice indices by region where price is zero
+	// Group advice indices by region where price needs enrichment
 	regionMissing := make(map[string][]int)
 	for i := range advices {
-		if advices[i].Price == 0 {
+		if advices[i].Price == 0 || forceAll {
 			regionMissing[advices[i].Region] = append(regionMissing[advices[i].Region], i)
 		}
 	}
@@ -147,7 +150,11 @@ func enrichMissingPrices(ctx context.Context, advices []Advice, provider livePri
 	for _, indices := range regionMissing {
 		totalMissing += len(indices)
 	}
-	slog.Info("fetching live prices for instances missing from static feed",
+	label := "instances missing from static feed"
+	if forceAll {
+		label = "all instances (live prices forced)"
+	}
+	slog.Info("fetching live prices for "+label,
 		slog.Int("count", totalMissing),
 		slog.Int("regions", len(regionMissing)))
 

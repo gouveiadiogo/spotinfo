@@ -26,7 +26,7 @@ func TestEnrichMissingPrices_FillsZeroPrices(t *testing.T) {
 		{Region: "us-east-1", Instance: "m8g.xlarge", Price: 0},
 	}
 
-	enrichMissingPrices(context.Background(), advices, provider, "linux", 5*time.Second)
+	enrichMissingPrices(context.Background(), advices, provider, "linux", 5*time.Second, false)
 
 	assert.Equal(t, 0.0116, advices[0].Price)
 	assert.False(t, advices[0].LivePrice)
@@ -55,7 +55,7 @@ func TestEnrichMissingPrices_MultipleRegions(t *testing.T) {
 		{Region: "eu-west-1", Instance: "r8g.large", Price: 0},
 	}
 
-	enrichMissingPrices(context.Background(), advices, provider, "linux", 5*time.Second)
+	enrichMissingPrices(context.Background(), advices, provider, "linux", 5*time.Second, false)
 
 	assert.Equal(t, 0.05, advices[0].Price)
 	assert.True(t, advices[0].LivePrice)
@@ -72,7 +72,7 @@ func TestEnrichMissingPrices_NoMissing(t *testing.T) {
 	}
 
 	// Provider should not be called at all
-	enrichMissingPrices(context.Background(), advices, nil, "linux", 5*time.Second)
+	enrichMissingPrices(context.Background(), advices, nil, "linux", 5*time.Second, false)
 
 	assert.Equal(t, 0.0116, advices[0].Price)
 	assert.Equal(t, 0.023, advices[1].Price)
@@ -85,7 +85,7 @@ func TestEnrichMissingPrices_NilProvider(t *testing.T) {
 		{Region: "us-east-1", Instance: "m8g.xlarge", Price: 0},
 	}
 
-	enrichMissingPrices(context.Background(), advices, nil, "linux", 5*time.Second)
+	enrichMissingPrices(context.Background(), advices, nil, "linux", 5*time.Second, false)
 
 	assert.Equal(t, 0.0, advices[0].Price)
 	assert.False(t, advices[0].LivePrice)
@@ -103,7 +103,7 @@ func TestEnrichMissingPrices_APIFailure_GracefulDegradation(t *testing.T) {
 		{Region: "us-east-1", Instance: "m8g.xlarge", Price: 0},
 	}
 
-	enrichMissingPrices(context.Background(), advices, provider, "linux", 5*time.Second)
+	enrichMissingPrices(context.Background(), advices, provider, "linux", 5*time.Second, false)
 
 	assert.Equal(t, 0.0, advices[0].Price)
 	assert.False(t, advices[0].LivePrice)
@@ -124,7 +124,7 @@ func TestEnrichMissingPrices_PartialResults(t *testing.T) {
 		{Region: "us-east-1", Instance: "r8gd.2xlarge", Price: 0},
 	}
 
-	enrichMissingPrices(context.Background(), advices, provider, "linux", 5*time.Second)
+	enrichMissingPrices(context.Background(), advices, provider, "linux", 5*time.Second, false)
 
 	assert.Equal(t, 0.15, advices[0].Price)
 	assert.True(t, advices[0].LivePrice)
