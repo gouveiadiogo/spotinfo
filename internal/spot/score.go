@@ -31,10 +31,6 @@ const (
 	maxRetryAttempts           = 5
 	DefaultScoreTimeoutSeconds = 30
 	defaultScoreTimeout        = DefaultScoreTimeoutSeconds * time.Second
-
-	// Mock score range for fallback
-	minMockScore = 1
-	maxMockScore = 10
 )
 
 // awsAPIProvider provides spot placement scores with different implementations.
@@ -46,9 +42,6 @@ type awsAPIProvider interface {
 type awsScoreProvider struct {
 	cfg aws.Config
 }
-
-// mockScoreProvider implements awsAPIProvider using mock scores for fallback.
-type mockScoreProvider struct{}
 
 // CachedScoreData wraps scores with timestamp for freshness tracking.
 type CachedScoreData struct {
@@ -86,6 +79,7 @@ type scoreCache struct {
 	cache    gcache.Cache
 	limiter  *rate.Limiter
 	provider awsAPIProvider
+	initErr  error // non-nil when AWS config could not be loaded at startup
 }
 
 // newScoreCache creates a new score cache with rate limiting and AWS provider.
@@ -99,26 +93,17 @@ func newScoreCache() *scoreCache {
 
 	limiter := rate.NewLimiter(rate.Every(rateLimitInterval), defaultRateLimitBurst)
 
-	// Try to create AWS provider, fallback to mock on error
-	provider := createAPIProvider()
+	provider, err := newAWSScoreProvider(context.Background())
 
-	return &scoreCache{
-		cache:    cache,
-		limiter:  limiter,
-		provider: provider,
+	sc := &scoreCache{
+		cache:   cache,
+		limiter: limiter,
+		initErr: err,
 	}
-}
-
-// createAPIProvider creates an AWS API provider or falls back to mock.
-//
-//nolint:contextcheck // Initialization function appropriately uses context.Background() for AWS config
-func createAPIProvider() awsAPIProvider {
-	// Try to create AWS provider
-	if provider, err := newAWSScoreProvider(context.Background()); err == nil {
-		return provider
+	if err == nil {
+		sc.provider = provider
 	}
-	// Fallback to mock provider
-	return &mockScoreProvider{}
+	return sc
 }
 
 // newAWSScoreProvider creates a new AWS score provider with proper configuration.
@@ -138,6 +123,10 @@ func newAWSScoreProvider(ctx context.Context) (*awsScoreProvider, error) {
 }
 
 // fetchScores implements awsAPIProvider for AWS API calls.
+//
+// Return value semantics differ by singleAZ:
+//   - singleAZ=false: map key is instance type, value is region-level score
+//   - singleAZ=true:  map key is AvailabilityZoneId (e.g. "use1-az1"), value is AZ-level score
 func (p *awsScoreProvider) fetchScores(ctx context.Context, region string, instanceTypes []string, singleAZ bool, targetCapacity int) (map[string]int, error) {
 	// Create region-specific client
 	client := ec2.NewFromConfig(p.cfg, func(o *ec2.Options) {
@@ -160,41 +149,27 @@ func (p *awsScoreProvider) fetchScores(ctx context.Context, region string, insta
 			return nil, fmt.Errorf("failed to get spot placement scores for region %s: %w", region, err)
 		}
 
-		// Process each score result
 		for _, result := range output.SpotPlacementScores {
 			score := int(aws.ToInt32(result.Score))
-
-			// Map scores to the requested instance types
-			// AWS may return scores for a subset of requested types
-			for _, instanceType := range instanceTypes {
-				// In practice, AWS returns results that correspond to the input
-				// For simplicity, we'll assign the score to each requested type
-				if _, exists := scores[instanceType]; !exists {
-					scores[instanceType] = score
+			if singleAZ {
+				// AWS returns one result per AZ; key by AvailabilityZoneId
+				if result.AvailabilityZoneId != nil {
+					azID := aws.ToString(result.AvailabilityZoneId)
+					if existing, exists := scores[azID]; !exists || score > existing {
+						scores[azID] = score
+					}
+				}
+			} else {
+				// AWS returns a region-level score; assign it to all requested instance types
+				for _, instanceType := range instanceTypes {
+					if existing, exists := scores[instanceType]; !exists || score > existing {
+						scores[instanceType] = score
+					}
 				}
 			}
 		}
 	}
 
-	// Fill in any missing instance types with a default score
-	for _, instanceType := range instanceTypes {
-		if _, exists := scores[instanceType]; !exists {
-			// Use a moderate default score if AWS doesn't return data for this type
-			scores[instanceType] = 5 // Middle of 1-10 range
-		}
-	}
-
-	return scores, nil
-}
-
-// fetchScores implements scoreProvider for mock scores.
-func (p *mockScoreProvider) fetchScores(_ context.Context, _ string, instanceTypes []string, _ bool, _ int) (map[string]int, error) {
-	scores := make(map[string]int)
-	for i, instanceType := range instanceTypes {
-		// Generate deterministic mock scores based on instance type and position
-		score := (len(instanceType)*7+i*3)%maxMockScore + minMockScore
-		scores[instanceType] = score
-	}
 	return scores, nil
 }
 
@@ -216,6 +191,10 @@ func (sc *scoreCache) getCacheKey(region string, instanceTypes []string, singleA
 func (sc *scoreCache) getSpotPlacementScores(ctx context.Context, region string,
 	instanceTypes []string, singleAZ bool, targetCapacity int) (map[string]int, error) {
 
+	if sc.initErr != nil {
+		return nil, fmt.Errorf("--with-score requires valid AWS credentials: %w", sc.initErr)
+	}
+
 	cacheKey := sc.getCacheKey(region, instanceTypes, singleAZ, targetCapacity)
 
 	// Check cache first
@@ -230,7 +209,6 @@ func (sc *scoreCache) getSpotPlacementScores(ctx context.Context, region string,
 		return nil, fmt.Errorf("rate limit wait failed: %w", err)
 	}
 
-	// Fetch from provider (AWS or mock)
 	scores, err := sc.provider.fetchScores(ctx, region, instanceTypes, singleAZ, targetCapacity)
 	if err != nil {
 		return nil, err
@@ -306,13 +284,12 @@ func (sc *scoreCache) enrichWithScores(ctx context.Context, advices []Advice,
 
 			// Apply scores to advices
 			if singleAZ {
-				// For AZ-level scores, store in ZoneScores map
-				for instanceType, score := range scores {
-					for _, adv := range typeToAdvices[instanceType] {
+				// scores is keyed by AZ ID (e.g. "use1-az1"); assign all AZ scores to every advice in this region
+				for azID, score := range scores {
+					for _, adv := range advs {
 						if adv.ZoneScores == nil {
 							adv.ZoneScores = make(map[string]int)
 						}
-						azID := fmt.Sprintf("%sa", r) // Mock AZ: us-east-1a, etc.
 						adv.ZoneScores[azID] = score
 						adv.ScoreFetchedAt = &fetchTime
 					}
