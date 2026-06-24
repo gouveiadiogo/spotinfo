@@ -138,6 +138,7 @@ func (p *awsScoreProvider) fetchScores(ctx context.Context, region string, insta
 		TargetCapacity:         aws.Int32(int32(targetCapacity)),
 		SingleAvailabilityZone: aws.Bool(singleAZ),
 		MaxResults:             aws.Int32(defaultMaxResults),
+		RegionNames:            []string{region},
 	}
 
 	scores := make(map[string]int)
